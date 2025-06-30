@@ -50,6 +50,8 @@ import org.postgresql.util.PGmoney;
 import org.postgresql.util.PGobject;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.PSQLState;
+import org.postgresql.util.PgResourceLock;
+import org.postgresql.util.ResourceLockFactory;
 import org.postgresql.xml.DefaultPGXmlFactoryFactory;
 import org.postgresql.xml.LegacyInsecurePGXmlFactoryFactory;
 import org.postgresql.xml.PGXmlFactoryFactory;
@@ -134,8 +136,8 @@ public class PgConnection implements BaseConnection {
     always
   }
 
-  private final ResourceLock lock = new ResourceLock();
-  private final Condition lockCondition = lock.newCondition();
+  private final PgResourceLock lock = ResourceLockFactory.makePossiblyConfinedLock();
+  private @Nullable final Condition lockCondition = lock.newCondition();
 
   //
   // Data initialized on construction:
@@ -516,14 +518,14 @@ public class PgConnection implements BaseConnection {
    * Obtain the connection lock and return it. Callers must use try-with-resources to ensure that
    * unlock() is performed on the lock.
    */
-  final ResourceLock obtainLock() {
+  final PgResourceLock obtainLock() {
     return lock.obtain();
   }
 
   /**
    * Return the lock condition for this connection.
    */
-  final Condition lockCondition() {
+  final @Nullable Condition lockCondition() {
     return lockCondition;
   }
 
@@ -885,7 +887,7 @@ public class PgConnection implements BaseConnection {
 
   @Override
   public @Nullable SQLWarning getWarnings() throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       checkClosed();
       SQLWarning newWarnings = queryExecutor.getWarnings(); // NB: also clears them.
       if (firstWarning == null) {
@@ -900,7 +902,7 @@ public class PgConnection implements BaseConnection {
 
   @Override
   public void clearWarnings() throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       checkClosed();
       //noinspection ThrowableNotThrown
       queryExecutor.getWarnings(); // Clear and discard.

@@ -12,15 +12,17 @@ import org.postgresql.PGProperty;
 import org.postgresql.jdbc.AutoSave;
 import org.postgresql.jdbc.EscapeSyntaxCallMode;
 import org.postgresql.jdbc.PreferQueryMode;
-import org.postgresql.jdbc.ResourceLock;
+
+import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
+import org.checkerframework.checker.nullness.qual.Nullable;
+
 import org.postgresql.util.HostSpec;
 import org.postgresql.util.LruCache;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.PSQLState;
+import org.postgresql.util.PgResourceLock;
+import org.postgresql.util.ResourceLockFactory;
 import org.postgresql.util.ServerErrorMessage;
-
-import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -72,8 +74,8 @@ public abstract class QueryExecutorBase implements QueryExecutor {
   private final TreeMap<String,String> parameterStatuses
       = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 
-  protected final ResourceLock lock = new ResourceLock();
-  protected final Condition lockCondition = lock.newCondition();
+  protected final PgResourceLock lock = ResourceLockFactory.makePossiblyConfinedLock();
+  protected final @Nullable Condition lockCondition = lock.newCondition();
 
   @SuppressWarnings({"assignment", "argument", "method.invocation"})
   protected QueryExecutorBase(PGStream pgStream, int cancelSignalTimeout, Properties info) throws SQLException {
@@ -223,7 +225,7 @@ public abstract class QueryExecutorBase implements QueryExecutor {
   }
 
   public void addWarning(SQLWarning newWarning) {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       if (warnings == null) {
         warnings = newWarning;
       } else {
@@ -233,14 +235,14 @@ public abstract class QueryExecutorBase implements QueryExecutor {
   }
 
   public void addNotification(PGNotification notification) {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       notifications.add(notification);
     }
   }
 
   @Override
   public PGNotification[] getNotifications() throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       PGNotification[] array = notifications.toArray(new PGNotification[0]);
       notifications.clear();
       return array;
@@ -249,7 +251,7 @@ public abstract class QueryExecutorBase implements QueryExecutor {
 
   @Override
   public @Nullable SQLWarning getWarnings() {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       SQLWarning chain = warnings;
       warnings = null;
       return chain;
@@ -283,20 +285,20 @@ public abstract class QueryExecutorBase implements QueryExecutor {
   }
 
   public void setTransactionState(TransactionState state) {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       transactionState = state;
     }
   }
 
   public void setStandardConformingStrings(boolean value) {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       standardConformingStrings = value;
     }
   }
 
   @Override
   public boolean getStandardConformingStrings() {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       return standardConformingStrings;
     }
   }
@@ -308,7 +310,7 @@ public abstract class QueryExecutorBase implements QueryExecutor {
 
   @Override
   public TransactionState getTransactionState() {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       return transactionState;
     }
   }

@@ -11,6 +11,8 @@ import org.postgresql.util.LazyCleaner;
 
 import org.checkerframework.checker.nullness.qual.Nullable;
 
+import org.postgresql.util.PgResourceLock;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.Timer;
@@ -30,7 +32,7 @@ import java.util.logging.Logger;
 class PgConnectionCleaningAction implements LazyCleaner.CleaningAction<IOException> {
   private static final Logger LOGGER = Logger.getLogger(PgConnection.class.getName());
 
-  private final ResourceLock lock;
+  private final PgResourceLock lock;
 
   private @Nullable Throwable openStackTrace;
   private final Closeable queryExecutorCloseAction;
@@ -43,7 +45,7 @@ class PgConnectionCleaningAction implements LazyCleaner.CleaningAction<IOExcepti
   private @Nullable Timer cancelTimer;
 
   PgConnectionCleaningAction(
-      ResourceLock lock,
+      PgResourceLock lock,
       @Nullable Throwable openStackTrace,
       Closeable queryExecutorCloseAction) {
     this.lock = lock;
@@ -52,7 +54,7 @@ class PgConnectionCleaningAction implements LazyCleaner.CleaningAction<IOExcepti
   }
 
   public Timer getTimer() {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       Timer cancelTimer = this.cancelTimer;
       if (cancelTimer == null) {
         cancelTimer = Driver.getSharedTimer().getTimer();
@@ -63,7 +65,7 @@ class PgConnectionCleaningAction implements LazyCleaner.CleaningAction<IOExcepti
   }
 
   public void releaseTimer() {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       if (cancelTimer != null) {
         cancelTimer = null;
         Driver.getSharedTimer().releaseTimer();
@@ -72,7 +74,7 @@ class PgConnectionCleaningAction implements LazyCleaner.CleaningAction<IOExcepti
   }
 
   public void purgeTimerTasks() {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       Timer timer = cancelTimer;
       if (timer != null) {
         timer.purge();

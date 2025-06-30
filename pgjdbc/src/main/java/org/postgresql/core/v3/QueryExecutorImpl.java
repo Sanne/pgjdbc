@@ -41,13 +41,13 @@ import org.postgresql.core.v3.adaptivefetch.AdaptiveFetchCache;
 import org.postgresql.core.v3.replication.V3ReplicationProtocol;
 import org.postgresql.jdbc.AutoSave;
 import org.postgresql.jdbc.BatchResultHandler;
-import org.postgresql.jdbc.ResourceLock;
 import org.postgresql.jdbc.TimestampUtils;
 import org.postgresql.util.ByteStreamWriter;
 import org.postgresql.util.GT;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.PSQLState;
 import org.postgresql.util.PSQLWarning;
+import org.postgresql.util.PgResourceLock;
 import org.postgresql.util.ServerErrorMessage;
 import org.postgresql.util.internal.IntSet;
 import org.postgresql.util.internal.SourceStreamIOException;
@@ -225,7 +225,9 @@ public class QueryExecutorImpl extends QueryExecutorBase {
           PSQLState.OBJECT_NOT_IN_STATE);
     }
     lockedFor = null;
-    lockCondition.signal();
+    if (lockCondition != null) {
+      lockCondition.signal();
+    }
   }
 
   /**
@@ -233,6 +235,9 @@ public class QueryExecutorImpl extends QueryExecutorBase {
    * without further ado. Must be called at beginning of each synchronized public method.
    */
   private void waitOnLock() throws PSQLException {
+    if (lockCondition == null) {
+      return;
+    }
     while (lockedFor != null) {
       try {
         lockCondition.await();
@@ -250,7 +255,7 @@ public class QueryExecutorImpl extends QueryExecutorBase {
    * @return whether given object actually holds the lock
    */
   boolean hasLockOn(@Nullable Object holder) {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       return lockedFor == holder;
     }
   }
@@ -334,7 +339,7 @@ public class QueryExecutorImpl extends QueryExecutorBase {
   public void execute(Query query, @Nullable ParameterList parameters,
       ResultHandler handler,
       int maxRows, int fetchSize, int flags, boolean adaptiveFetch) throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       waitOnLock();
       if (LOGGER.isLoggable(Level.FINEST)) {
         LOGGER.log(Level.FINEST, "  simple execute, handler={0}, maxRows={1}, fetchSize={2}, flags={3}",
@@ -530,7 +535,7 @@ public class QueryExecutorImpl extends QueryExecutorBase {
   public void execute(Query[] queries, @Nullable ParameterList[] parameterLists,
       BatchResultHandler batchHandler, int maxRows, int fetchSize, int flags, boolean adaptiveFetch)
       throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       waitOnLock();
       if (LOGGER.isLoggable(Level.FINEST)) {
         LOGGER.log(Level.FINEST, "  batch execute {0} queries, handler={1}, maxRows={2}, fetchSize={3}, flags={4}",
@@ -659,7 +664,7 @@ public class QueryExecutorImpl extends QueryExecutorBase {
   public byte @Nullable [] fastpathCall(int fnid, ParameterList parameters,
       boolean suppressBegin)
       throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       waitOnLock();
       if (!suppressBegin) {
         doSubprotocolBegin();
@@ -788,7 +793,7 @@ public class QueryExecutorImpl extends QueryExecutorBase {
    */
   @Override
   public void processNotifies(int timeoutMillis) throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       waitOnLock();
       // Asynchronous notifies only arrive when we are not in a transaction
       if (getTransactionState() != TransactionState.IDLE) {
@@ -962,7 +967,7 @@ public class QueryExecutorImpl extends QueryExecutorBase {
   @Override
   public CopyOperation startCopy(String sql, boolean suppressBegin)
       throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       waitOnLock();
       if (!suppressBegin) {
         doSubprotocolBegin();
@@ -996,7 +1001,7 @@ public class QueryExecutorImpl extends QueryExecutorBase {
    * @throws IOException on database connection failure
    */
   private void initCopy(CopyOperationImpl op) throws SQLException, IOException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       pgStream.receiveInteger4(); // length not used
       int rowFormat = pgStream.receiveChar();
       int numFields = pgStream.receiveInteger2();
@@ -1028,7 +1033,7 @@ public class QueryExecutorImpl extends QueryExecutorBase {
 
     try {
       if (op instanceof CopyIn) {
-        try (ResourceLock ignore = lock.obtain()) {
+        try (PgResourceLock ignore = lock.obtain()) {
           LOGGER.log(Level.FINEST, "FE => CopyFail");
           final byte[] msg = "Copy cancel requested".getBytes(StandardCharsets.US_ASCII);
           pgStream.sendChar(PgMessageType.COPY_FAIL); // CopyFail
@@ -1065,7 +1070,7 @@ public class QueryExecutorImpl extends QueryExecutorBase {
       // future operations, rather than failing due to the
       // broken connection, will simply hang waiting for this
       // lock.
-      try (ResourceLock ignore = lock.obtain()) {
+      try (PgResourceLock ignore = lock.obtain()) {
         if (hasLock(op)) {
           unlock(op);
         }
@@ -1092,7 +1097,7 @@ public class QueryExecutorImpl extends QueryExecutorBase {
    * @throws SQLException on failure
    */
   public long endCopy(CopyOperationImpl op) throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       if (!hasLock(op)) {
         throw new PSQLException(GT.tr("Tried to end inactive copy"), PSQLState.OBJECT_NOT_IN_STATE);
       }
@@ -1127,7 +1132,7 @@ public class QueryExecutorImpl extends QueryExecutorBase {
    */
   public void writeToCopy(CopyOperationImpl op, byte[] data, int off, int siz)
       throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       if (!hasLock(op)) {
         throw new PSQLException(GT.tr("Tried to write to an inactive copy operation"),
             PSQLState.OBJECT_NOT_IN_STATE);
@@ -1156,7 +1161,7 @@ public class QueryExecutorImpl extends QueryExecutorBase {
    */
   public void writeToCopy(CopyOperationImpl op, ByteStreamWriter from)
       throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       if (!hasLock(op)) {
         throw new PSQLException(GT.tr("Tried to write to an inactive copy operation"),
             PSQLState.OBJECT_NOT_IN_STATE);
@@ -1177,7 +1182,7 @@ public class QueryExecutorImpl extends QueryExecutorBase {
   }
 
   public void flushCopy(CopyOperationImpl op) throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       if (!hasLock(op)) {
         throw new PSQLException(GT.tr("Tried to write to an inactive copy operation"),
             PSQLState.OBJECT_NOT_IN_STATE);
@@ -1201,7 +1206,7 @@ public class QueryExecutorImpl extends QueryExecutorBase {
    * @throws SQLException on any failure
    */
   void readFromCopy(CopyOperationImpl op, boolean block) throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       if (!hasLock(op)) {
         throw new PSQLException(GT.tr("Tried to read from inactive copy"),
             PSQLState.OBJECT_NOT_IN_STATE);
@@ -2594,7 +2599,7 @@ public class QueryExecutorImpl extends QueryExecutorBase {
   @Override
   public void fetch(ResultCursor cursor, ResultHandler handler, int fetchSize,
       boolean adaptiveFetch) throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       waitOnLock();
       final Portal portal = (Portal) cursor;
 

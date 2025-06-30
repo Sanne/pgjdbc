@@ -5,6 +5,8 @@
 
 package org.postgresql.jdbc;
 
+import org.postgresql.util.PgResourceLock;
+
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -19,11 +21,12 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * }</pre>
  */
-public final class ResourceLock extends ReentrantLock implements AutoCloseable {
+public final class ResourceLock extends ReentrantLock implements PgResourceLock {
 
   /**
    * Obtain a lock and return the ResourceLock for use in try-with-resources block.
    */
+  @Override
   public ResourceLock obtain() {
     lock();
     return this;

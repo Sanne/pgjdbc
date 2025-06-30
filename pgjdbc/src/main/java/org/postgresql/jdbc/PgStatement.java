@@ -29,6 +29,8 @@ import org.checkerframework.checker.lock.qual.GuardedBy;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.checker.nullness.qual.RequiresNonNull;
 
+import org.postgresql.util.PgResourceLock;
+
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -41,6 +43,7 @@ import java.util.TimerTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.concurrent.locks.Condition;
 
 public class PgStatement implements Statement, BaseStatement {
   private static final String[] NO_RETURNING_COLUMNS = new String[0];
@@ -929,12 +932,15 @@ public class PgStatement implements Statement, BaseStatement {
       return;
     }
     // Use connection lock to avoid spinning in killTimerTask
-    try (ResourceLock connectionLock = connection.obtainLock()) {
+    try (PgResourceLock connectionLock = connection.obtainLock()) {
       try {
         connection.cancelQuery();
       } finally {
         STATE_UPDATER.set(this, StatementCancelState.CANCELLED);
-        connection.lockCondition().signalAll(); // wake-up killTimerTask
+        final @Nullable Condition lockCondition = connection.lockCondition();
+        if (lockCondition != null) {
+          lockCondition.signalAll(); // wake-up killTimerTask
+        }
       }
     }
   }
@@ -1049,14 +1055,17 @@ public class PgStatement implements Statement, BaseStatement {
     // "timeout error"
     // We wait till state becomes "cancelled"
     boolean interrupted = false;
-    try (ResourceLock connectionLock = connection.obtainLock()) {
+    try (PgResourceLock connectionLock = connection.obtainLock()) {
       // state check is performed with connection lock so it detects "cancelled" state faster
       // In other words, it prevents unnecessary ".wait()" call
       while (!STATE_UPDATER.compareAndSet(this, StatementCancelState.CANCELLED, StatementCancelState.IDLE)) {
         try {
           // Note: wait timeout here is irrelevant since connection.obtainLock() would block until
           // .cancel finishes
-          connection.lockCondition().await(10, TimeUnit.MILLISECONDS);
+          final @Nullable Condition lockCondition = connection.lockCondition();
+          if (lockCondition != null) {
+            lockCondition.await(10, TimeUnit.MILLISECONDS);
+          }
         } catch (InterruptedException e) { // NOSONAR
           // Either re-interrupt this method or rethrow the "InterruptedException"
           interrupted = true;
