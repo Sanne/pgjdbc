@@ -16,6 +16,7 @@ import org.postgresql.util.PSQLState;
 
 import org.checkerframework.checker.index.qual.Positive;
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.postgresql.util.PgResourceLock;
 
 import java.io.InputStream;
 import java.io.Reader;
@@ -86,7 +87,7 @@ class PgCallableStatement extends PgPreparedStatement implements CallableStateme
 
   @Override
   public boolean executeWithFlags(int flags) throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       boolean hasResultSet = super.executeWithFlags(flags);
       int[] functionReturnType = this.functionReturnType;
       if (!isFunction || !returnTypeSet || functionReturnType == null) {

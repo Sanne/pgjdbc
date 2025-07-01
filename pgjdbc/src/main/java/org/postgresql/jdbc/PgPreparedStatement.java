@@ -29,6 +29,7 @@ import org.postgresql.util.PGTimestamp;
 import org.postgresql.util.PGobject;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.PSQLState;
+import org.postgresql.util.PgResourceLock;
 import org.postgresql.util.ReaderInputStream;
 
 import org.checkerframework.checker.index.qual.NonNegative;
@@ -135,7 +136,7 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
    */
   @Override
   public ResultSet executeQuery() throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       if (!executeWithFlags(0)) {
         throw new PSQLException(GT.tr("No results were returned by the query."), PSQLState.NO_DATA);
       }
@@ -153,7 +154,7 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
 
   @Override
   public int executeUpdate() throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       executeWithFlags(QueryExecutor.QUERY_NO_RESULTS);
       checkNoResultUpdate();
       return getUpdateCount();
@@ -162,7 +163,7 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
 
   @Override
   public long executeLargeUpdate() throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       executeWithFlags(QueryExecutor.QUERY_NO_RESULTS);
       checkNoResultUpdate();
       return getLargeUpdateCount();
@@ -178,7 +179,7 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
 
   @Override
   public boolean execute() throws SQLException {
-    try (ResourceLock ignore = lock.obtain()) {
+    try (PgResourceLock ignore = lock.obtain()) {
       return executeWithFlags(0);
     }
   }
@@ -186,7 +187,7 @@ class PgPreparedStatement extends PgStatement implements PreparedStatement {
   @Override
   public boolean executeWithFlags(int flags) throws SQLException {
     try {
-      try (ResourceLock ignore = lock.obtain()) {
+      try (PgResourceLock ignore = lock.obtain()) {
         checkClosed();
 
         if (connection.getPreferQueryMode() == PreferQueryMode.SIMPLE) {
